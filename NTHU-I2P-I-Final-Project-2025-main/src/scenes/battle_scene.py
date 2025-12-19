@@ -30,7 +30,7 @@ class BattleScene(Scene):
 
         # ===== Enemy（合法寫死）=====
         self.enemy_name = "Enemy"
-        self.enemy_element = "Grass"
+        self.enemy_element = "Water"
         self.enemy_hp = 100
         self.enemy_attack = 28
         self.enemy_defense = 4
@@ -101,12 +101,22 @@ class BattleScene(Scene):
 
         # ===== 攻擊屬性背景圖片 =====
         self.attack_bg_images = {
-        "Electric": pg.image.load("assets/images/attack/attack7.png").convert_alpha()
+        "Electric": pg.image.load("assets/images/attack/attack7.png").convert_alpha(),
+        "Water": pg.image.load("assets/images/attack/attack3.png").convert_alpha()
 }
+
 
         screen_width = pg.display.get_surface().get_width()
         screen_height = pg.display.get_surface().get_height()
         self.attack_bg_images["Electric"] = pg.transform.scale(self.attack_bg_images["Electric"], (screen_width, screen_height))
+        # ===== 攻擊動畫圖片（根據屬性） =====
+        self.attack_images = {
+    "Electric": pg.image.load("assets/images/attack/attack7.png").convert_alpha(),
+    "Water": pg.image.load("assets/images/attack/attack3.png").convert_alpha()
+}
+
+        self.attack_images["Electric"] = pg.transform.scale(self.attack_images["Electric"], (50, 50))
+        self.attack_images["Water"] = pg.transform.scale(self.attack_images["Water"], (50, 50))
 
 
     def enter(self):
@@ -341,11 +351,15 @@ class BattleScene(Scene):
         screen.blit(self.enemy_img, enemy_pos_draw)
  
         # ===== 戰鬥畫面背景 =====
-        if self.attack_in_progress and self.attack_from_player and self.player_element == "Electric":
-            # 玩家是電屬性攻擊，顯示電屬性背景
-            screen.blit(self.attack_bg_images["Electric"], (0, 0))
+        if self.attack_in_progress:
+            if self.attack_from_player:
+                # 玩家攻擊背景  
+                screen.blit(self.attack_bg_images.get(self.player_element, self.background), (0, 0))
+            else:
+                # 敵人攻擊背景（固定水屬性）
+                screen.blit(self.attack_bg_images["Water"], (0, 0))
         else:
-            # 正常背景
+        # 正常背景
             screen.blit(self.background, (0, 0))
 
         # ===== 角色圖 =====
@@ -404,3 +418,28 @@ class BattleScene(Scene):
             text_surface = self.font.render(text, True, (255, 255, 255))
             text_rect = text_surface.get_rect(center=btn_rect.center)
             screen.blit(text_surface, text_rect)
+        # ===== 屬性克制表 (右上角) =====
+        x_offset = screen_width - 800  # 右邊距離
+        y_offset = 20                  # 上方距離
+        line_height = 20               # 行高
+
+        title_surface = self.font.render("Element Effectiveness", True, (255, 255, 0))
+        screen.blit(title_surface, (x_offset, y_offset))
+        y_offset += line_height
+
+        for ele, eff in ELEMENT_EFFECTIVENESS.items():
+            strong = eff.get("strong") or "None"
+            weak = eff.get("weak") or "None"
+            line_text = f"{ele}: strong → {strong}, weak → {weak}"
+            line_surface = self.font.render(line_text, True, (255, 255, 255))
+            screen.blit(line_surface, (x_offset, y_offset))
+            y_offset += line_height
+
+        # 元素顯示（在角色下方）
+        player_element_text = self.font.render(f"Element: {self.player_element}", True, (0, 255, 255))
+        enemy_element_text = self.font.render(f"Element: {self.enemy_element}", True, (0, 255, 255))
+        screen.blit(player_element_text, (player_pos_draw[0], player_pos_draw[1] + 160))  # 150圖高 + 10間距
+      
+        screen.blit(enemy_element_text, (enemy_pos_draw[0], enemy_pos_draw[1] + 160))
+       
+
