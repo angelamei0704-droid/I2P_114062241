@@ -11,7 +11,20 @@ class SceneManager:
     def __init__(self):
         Logger.info("Initializing SceneManager")
         self._scenes = {}
-
+        self.game_state = {
+            "bag": {
+                "monsters": [
+                    {
+                        "name": "Pikachu",
+                        "element": "Electric",
+                        "hp": 100,
+                        "max_hp": 100,
+                        "attack": 30,
+                        "defense": 5
+                    }
+                ]
+            }
+        }
     def register_scene(self, name: str, scene: Scene) -> None:
         """註冊場景"""
         self._scenes[name] = scene

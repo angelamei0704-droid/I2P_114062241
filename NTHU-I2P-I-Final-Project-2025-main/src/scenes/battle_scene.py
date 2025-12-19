@@ -4,11 +4,36 @@ from src.scenes.scene import Scene
 from src.utils import Logger
 import src.core.managers.scene_manager as SM
 
+ELEMENT_EFFECTIVENESS = {
+    "Fire":   {"strong": "Grass", "weak": "Water"},
+    "Water":  {"strong": "Fire",  "weak": "Grass"},
+    "Grass":  {"strong": "Water", "weak": "Fire"},
+    "Electric": {"strong": "Water", "weak": None},
+    "Ice": {"strong": "Grass", "weak": "Fire"},
+    "Ghost": {"strong": None, "weak": None}
+}
+
 class BattleScene(Scene):
     def __init__(self, scene_manager):
         super().__init__()
         self.scene_manager = scene_manager
 
+        # =========================================================
+# ===== Player（battle 開始時再初始化）=====
+        self.player_name = ""
+        self.player_element = ""
+        self.max_hp = 100
+        self.player_hp = 100
+        self.player_attack = 30
+        self.player_defense = 5
+
+
+        # ===== Enemy（合法寫死）=====
+        self.enemy_name = "Enemy"
+        self.enemy_element = "Grass"
+        self.enemy_hp = 100
+        self.enemy_attack = 28
+        self.enemy_defense = 4
         # ===== 背景 =====
         self.background = pg.image.load("assets/images/backgrounds/background1.png").convert()
         screen_width = pg.display.get_surface().get_width()
@@ -27,10 +52,6 @@ class BattleScene(Scene):
         self.enemy_attack_img = pg.image.load("assets/images/UI/raw/UI_Flat_Handle05a.png").convert_alpha()
         self.enemy_attack_img = pg.transform.scale(self.enemy_attack_img, (30, 30))
 
-        # ===== 血量 =====
-        self.max_hp = 100
-        self.player_hp = self.max_hp
-        self.enemy_hp = self.max_hp
 
         # ===== 回合控制 =====
         self.turn_count = 1
@@ -70,12 +91,63 @@ class BattleScene(Scene):
         self.over_font = pg.font.SysFont(None, 60)
         self.turn_font = pg.font.SysFont(None, 28)
 
+        # ===== 攻擊動畫圖片（根據屬性） =====
+        self.attack_images = {
+            "Electric": pg.image.load(
+                r"C:\Users\angel\OneDrive\Desktop\NTHU-I2P-I-Final-Project-2025-main\NTHU-I2P-I-Final-Project-2025-main\assets\images\attack\attack7.png"
+            ).convert_alpha()
+        }
+        self.attack_images["Electric"] = pg.transform.scale(self.attack_images["Electric"], (50, 50))
+
+        # ===== 攻擊屬性背景圖片 =====
+        self.attack_bg_images = {
+        "Electric": pg.image.load("assets/images/attack/attack7.png").convert_alpha()
+}
+
+        screen_width = pg.display.get_surface().get_width()
+        screen_height = pg.display.get_surface().get_height()
+        self.attack_bg_images["Electric"] = pg.transform.scale(self.attack_bg_images["Electric"], (screen_width, screen_height))
+
+
     def enter(self):
         Logger.info("Entered Battle Scene")
+
+        game_state = self.scene_manager.game_state
+        player_mon = game_state["bag"]["monsters"][0]   # 永遠用第一隻
+
+        self.player_name = player_mon["name"]
+        self.player_element = player_mon["element"]
+        self.max_hp = player_mon["max_hp"]
+        self.player_hp = player_mon["hp"]
+
+        self.player_attack = player_mon.get("attack", 30)
+        self.player_defense = player_mon.get("defense", 5)
+
 
     def exit(self):
         Logger.info("Exiting Battle Scene")
 
+    def calculate_damage(self, attacker):
+        if attacker == "player":
+            atk = self.player_attack
+            atk_ele = self.player_element
+            def_ele = self.enemy_element
+            defense = self.enemy_defense
+        else:
+            atk = self.enemy_attack
+            atk_ele = self.enemy_element
+            def_ele = self.player_element
+            defense = self.player_defense
+
+        damage = atk
+        effect = ELEMENT_EFFECTIVENESS.get(atk_ele, {})
+
+        if effect.get("strong") == def_ele:
+            damage *= 1.5
+        elif effect.get("weak") == def_ele:
+            damage *= 0.7
+
+        return max(1, int(damage - defense))
     # ============================================================
     # ================= 玩家按鈕操作 ===========================
     # ============================================================
@@ -152,7 +224,12 @@ class BattleScene(Scene):
             self.run_target_pos = [self.run_start_pos[0], self.run_start_pos[1] - 180]
             self.running_away = True
             self.run_pos_hidden = False
-
+        # 根據屬性選擇動畫
+        if actor == "player":
+            ele = self.player_element
+        else:
+            ele = self.enemy_element
+        self.current_attack_img = self.attack_images.get(ele, self.player_attack_img)
     # ============================================================
     # ========================== Update ==========================
     # ============================================================
@@ -188,7 +265,8 @@ class BattleScene(Scene):
                     else:
                         player_dodged = False
                     if not player_dodged:
-                        self.player_hp = max(0, self.player_hp - 34)
+                        damage = self.calculate_damage("enemy")
+                        self.player_hp = max(0, self.player_hp - damage)
 
                 self.attack_in_progress = False
                 self.attack_pos = None
@@ -261,6 +339,28 @@ class BattleScene(Scene):
         screen.blit(self.player_img, player_draw_pos)
 
         screen.blit(self.enemy_img, enemy_pos_draw)
+ 
+        # ===== 戰鬥畫面背景 =====
+        if self.attack_in_progress and self.attack_from_player and self.player_element == "Electric":
+            # 玩家是電屬性攻擊，顯示電屬性背景
+            screen.blit(self.attack_bg_images["Electric"], (0, 0))
+        else:
+            # 正常背景
+            screen.blit(self.background, (0, 0))
+
+        # ===== 角色圖 =====
+        player_draw_pos = player_pos_draw
+        if self.running_away and self.run_start_pos is not None:
+            player_draw_pos = self.run_start_pos
+        screen.blit(self.player_img, player_draw_pos)
+        screen.blit(self.enemy_img, enemy_pos_draw)
+
+        # ===== 攻擊動畫 =====
+        if self.attack_in_progress and self.attack_pos:
+            attack_img = self.current_attack_img
+            offset_y = -50 if self.attack_from_player else 0
+            attack_rect = attack_img.get_rect(center=(self.attack_pos[0], self.attack_pos[1] + offset_y))
+            screen.blit(attack_img, attack_rect)
 
         # 血條
         bar_width = 150
@@ -280,11 +380,7 @@ class BattleScene(Scene):
         turn_text = self.turn_font.render(f"Turn {self.turn_count}", True, (255, 255, 0))
         screen.blit(turn_text, (screen_width // 2 - 50, 20))
 
-        # 攻擊動畫
-        if self.attack_in_progress and self.attack_pos:
-            attack_img = self.player_attack_img if self.attack_from_player else self.enemy_attack_img
-            attack_rect = attack_img.get_rect(center=self.attack_pos)
-            screen.blit(attack_img, attack_rect)
+
 
         # 按鈕
         num_buttons = len(self.buttons)
