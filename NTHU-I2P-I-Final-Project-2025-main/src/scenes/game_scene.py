@@ -162,6 +162,21 @@ class GameScene(Scene):
         self.nav_in_progress = False      # 是否正在導航
         self.house_btn = None
         self.garden_btn = None
+        # ===== 背包 =====
+        self.items = [
+            {"name": "Heal Potion", "effect": "Restore HP"},
+            {"name": "Strength Potion", "effect": "Increase Attack"},
+            {"name": "Defense Potion", "effect": "Increase Defense"}
+        ]
+        self.item_buttons = []  # 按鈕列表
+        self.selected_item = None
+        self.shop_items = [
+            {"name": "Heal Potion", "price": 300},
+            {"name": "Strength Potion", "price": 350},
+            {"name": "Defense Potion", "price": 400},
+        ]
+        self.shop_item_buttons = []  # 滑鼠按鈕
+
 
     @override
     def enter(self) -> None:
@@ -259,13 +274,13 @@ class GameScene(Scene):
             interaction_range = GameSettings.TILE_SIZE * 1.5 
             # 建立一個稍微擴大的 NPC 矩形，用於更寬鬆的互動偵測
             interact_rect = self.shop_npc_rect.inflate(interaction_range, interaction_range)
-        screen_width = pg.display.get_surface().get_width()
-        self.nav_rect.topright = (screen_width - 20, self.backpack_rect.bottom + 10)
 
         screen_width = pg.display.get_surface().get_width()
         self.nav_rect.topright = (screen_width - 20, self.backpack_rect.bottom + 10)
         self.update_navigation(dt)
         self.is_nav_hover = self.nav_rect.collidepoint(mx, my)
+
+
 
     # ===== 判斷玩家是否靠近 NPC =====
     def is_warning_active(self) -> bool:
@@ -348,34 +363,24 @@ class GameScene(Scene):
                 if self.nav_overlay_open:
                     self.nav_overlay_open = False
 
-            # SPACE 鍵：觸發戰鬥
             elif event.key == pg.K_SPACE:
-                if any(getattr(enemy, "detected", False) for enemy in self.game_manager.current_enemy_trainers):
-                    Logger.info("Player near NPC → Switching to Battle Scene")
+                player_rect = self.game_manager.player.rect
+                # NPC 座標 24,29
+                ex_x, ex_y = 24 * GameSettings.TILE_SIZE, 29 * GameSettings.TILE_SIZE
+                enemy_rect = pg.Rect(ex_x, ex_y, GameSettings.TILE_SIZE, GameSettings.TILE_SIZE)
+                interact_range = GameSettings.TILE_SIZE * 1.5
+                interact_rect = enemy_rect.inflate(interact_range, interact_range)
+
+                if player_rect.colliderect(interact_rect):
+                    Logger.info("Player near target NPC → Switching to Battle Scene")
                     if "battle" in scene_manager._scenes:
                         scene_manager.change_scene("battle")
                     else:
                         Logger.error("Battle scene not found")
 
 
-            # 商店操作：B 買、S 賣
-            if self.shop_overlay_open:
-                if self.shop_page == "buy" and event.key == pg.K_b:
-                    price = 300
-                    if self.game_manager.bag.money >= price:
-                        self.game_manager.bag.money -= price
-                        self.game_manager.bag.add_item("potion", 1)
-                        Logger.info("Bought Potion")
-                    else:
-                        Logger.info("Not enough money")
-                elif self.shop_page == "sell" and event.key == pg.K_s:
-                    sell_price = 150
-                    if self.game_manager.bag.has_item("potion"):
-                        self.game_manager.bag.remove_item("potion", 1)
-                        self.game_manager.bag.money += sell_price
-                        Logger.info("Sold Potion")
-                    else:
-                        Logger.info("No Potion to sell")
+
+
 
         # ===== 滑鼠事件 / Overlay 處理 =====
         if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
@@ -403,29 +408,26 @@ class GameScene(Scene):
                     self.overlay_open = False
                     self.overlay_type = None
         if self.shop_overlay_open:
-            mx, my = pg.mouse.get_pos()
-            self.is_buy_hover = self.buy_button_rect.collidepoint(mx, my)
-            if event.type == pg.MOUSEBUTTONDOWN and event.button == 1 and self.shop_overlay_open:
-                mx, my = pg.mouse.get_pos()
-                # Buy Pokeball
-                # Buy Pokeball
-                if self.shop_page == "buy" and self.buy_button_rect.collidepoint(mx, my):
-                    price = 200
-                    if self.game_manager.bag.money >= price:
-                        self.game_manager.bag.money -= price
-                        self.game_manager.bag.add_item("pokeball", 1)
-                        Logger.info("Bought Pokeball")
-                    else:
-                        Logger.info("Not enough money")
-                # Sell Pokeball
-                elif self.shop_page == "sell" and self.sell_button_rect.collidepoint(mx, my):
-                    sell_price = 100
-                    if self.game_manager.bag.has_item("pokeball"):
-                        self.game_manager.bag.remove_item("pokeball", 1)
-                        self.game_manager.bag.money += sell_price
-                        Logger.info("Sold Pokeball")
-                    else:
-                        Logger.info("No Pokeball to sell")
+            if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                # Buy or Sell 按鈕統一處理
+                for rect, item in self.shop_item_buttons:
+                    if rect.collidepoint(mx, my):
+                        if self.shop_page == "buy":
+                            if self.game_manager.bag.money >= item["price"]:
+                                self.game_manager.bag.money -= item["price"]
+                                self.game_manager.bag.add_item(item["name"], 1)
+                                Logger.info(f"Bought {item['name']}")
+                                # 同步更新 Overlay 道具列表
+                                self.items = [{"name": i["name"], "effect": i.get("effect","")} for i in self.game_manager.bag.items]
+                            else:
+                                Logger.info("Not enough money")
+                        elif self.shop_page == "sell":
+                            if self.game_manager.bag.has_item(item["name"]):
+                                self.game_manager.bag.remove_item(item["name"], 1)
+                                self.game_manager.bag.money += item.get("price", 0)//2  # 可賣回半價
+                                Logger.info(f"Sold {item['name']}")
+
 
 
                 if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
@@ -462,6 +464,23 @@ class GameScene(Scene):
                 elif self.garden_btn.collidepoint(mx, my):
                     self.start_navigation(self.nav_places[1]["pos"])
                     self.nav_overlay_open = False
+        if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+            for rect, item in self.item_buttons:
+                if rect.collidepoint(mx, my):
+                    self.selected_item = item
+                    Logger.info(f"Selected item: {item['name']}")
+        if self.shop_overlay_open and self.shop_page == "buy":
+            if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = pg.mouse.get_pos()
+                for rect, item in self.shop_item_buttons:
+                    if rect.collidepoint(mx, my):
+                        if self.game_manager.bag.money >= item["price"]:
+                            self.game_manager.bag.money -= item["price"]
+                            self.game_manager.bag.add_item(item["name"], 1)
+                            Logger.info(f"Bought {item['name']}")
+                        else:
+                            Logger.info("Not enough money")
 
 
     def start_navigation(self, target_pos):
@@ -495,9 +514,46 @@ class GameScene(Scene):
         # ===== Draw Enemy NPCs & Warning Symbol =====
         for enemy in self.game_manager.current_enemy_trainers:
             enemy.draw(screen, camera)
+        # ===== Draw Enemy NPC & interaction hint =====
+        for enemy in self.game_manager.current_enemy_trainers:
+            # 畫 NPC 圖像
+            enemy.draw(screen, camera)
+
+            # 判斷是否是目標 NPC (座標 24,29)
+            ex_x, ex_y = 24 * GameSettings.TILE_SIZE, 29 * GameSettings.TILE_SIZE
+            enemy_rect = pg.Rect(ex_x, ex_y, GameSettings.TILE_SIZE, GameSettings.TILE_SIZE)
+
+            player_rect = self.game_manager.player.rect
+            interact_range = GameSettings.TILE_SIZE * 1.5
+            interact_rect = enemy_rect.inflate(interact_range, interact_range)
+
+            if player_rect.colliderect(interact_rect):
+                # 畫感嘆號
+                exclamation_rect = self.warning_icon.get_rect(center=(enemy_rect.centerx - camera.x, enemy_rect.top - 45 - camera.y))
+                screen.blit(self.warning_icon, exclamation_rect.topleft)
+
+                # 畫互動提示文字
+                interact_text = self.npc_font.render("Press SPACE to Battle", True, (255, 255, 255))
+                text_rect = interact_text.get_rect(center=(enemy_rect.centerx - camera.x, enemy_rect.top - 65 - camera.y))
+                bg = pg.Surface((text_rect.width + 10, text_rect.height + 6), pg.SRCALPHA)
+                bg.fill((0, 0, 0, 160))
+                screen.blit(bg, (text_rect.x - 5, text_rect.y - 3))
+                screen.blit(interact_text, text_rect)
+
             
         # ===== Draw Bag =====
         self.game_manager.bag.draw(screen)
+        # ===== 畫背包按鈕 =====
+        for rect, item in self.item_buttons:
+            mx, my = pg.mouse.get_pos()
+            if rect.collidepoint(mx, my):
+                color = (180, 180, 180)
+            else:
+                color = (120, 120, 120)
+            pg.draw.rect(screen, color, rect)
+            text_surf = self.font.render(item["name"], True, (255, 255, 255))
+            text_rect = text_surf.get_rect(center=rect.center)
+            screen.blit(text_surf, text_rect)
 
         # ===== Draw Online Players =====
         if self.online_manager and self.game_manager.player:
@@ -663,63 +719,58 @@ class GameScene(Scene):
             # 標題
             title_text = font.render("NPC SHOP", True, (255, 255, 255))
             screen.blit(title_text, (overlay_rect.x + 40, overlay_rect.y + 30))
+            # 顯示剩餘金錢
+            money_text = small_font.render(f"Money: ${self.game_manager.bag.money}", True, (255, 255, 0))
+            money_x = overlay_rect.right - money_text.get_width() - 40  # 往左偏移 40 像素
+            money_y = overlay_rect.y + 30
+            screen.blit(money_text, (money_x, money_y))
 
-            # 鍵盤提示
-            keyboard_hint = small_font.render("You can press B to buy Potion, S to sell Potion", True, (255, 255, 255))
-            screen.blit(keyboard_hint, (overlay_rect.x + 40, overlay_rect.y + 280))
+            # 清空按鈕列表，避免重複 append
+            self.shop_item_buttons.clear()
 
-           
-            # 玩家金錢
-            money = self.game_manager.bag.money if self.game_manager.player else 0
-            money_text = small_font.render(f"Your Money: ${money}", True, (255, 220, 100))
-            screen.blit(money_text, (overlay_rect.x + overlay_width//2 + 20, overlay_rect.y + 80))
+            # Tab 按鈕
+            self.buy_tab_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 30)
+            self.sell_tab_rect.topleft = (overlay_rect.x + 160, overlay_rect.y + 30)
 
+            buy_color = (0, 200, 0) if self.shop_page == "buy" else (100, 100, 100)
+            sell_color = (200, 0, 0) if self.shop_page == "sell" else (100, 100, 100)
+            pg.draw.rect(screen, buy_color, self.buy_tab_rect)
+            pg.draw.rect(screen, sell_color, self.sell_tab_rect)
+            font_small = pg.font.SysFont(None, 24)
+            screen.blit(font_small.render("BUY", True, (255,255,255)), self.buy_tab_rect.center)
+            screen.blit(font_small.render("SELL", True, (255,255,255)), self.sell_tab_rect.center)
 
-            # 顯示背包道具
-            for i, item in enumerate(self.game_manager.bag.items):
-                name = item["name"]
-                count = item.get("count", 1)
-                it_text = small_font.render(f"{i+1}. {name} x{count}", True, (255, 255, 255))
-                screen.blit(it_text, (overlay_rect.x + overlay_width//2 + 20, overlay_rect.y + 120 + i*35))
+            if self.shop_page == "buy":
+                # Potion 按鈕
+                for i, item in enumerate(self.shop_items):
+                    btn_w, btn_h = 140, 40
+                    x = overlay_rect.x + 40
+                    y = overlay_rect.y + 80 + i * 50
+                    rect = pg.Rect(x, y, btn_w, btn_h)
+                    self.shop_item_buttons.append((rect, item))  # 這裡 append
 
-                # Tab 按鈕位置
-                self.buy_tab_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 30)
-                self.sell_tab_rect.topleft = (overlay_rect.x + 160, overlay_rect.y + 30)
+                    # 判斷 hover
+                    mx, my = pg.mouse.get_pos()
+                    color = (0, 200, 0) if rect.collidepoint(mx, my) else (0, 150, 0)
+                    pg.draw.rect(screen, color, rect)
+                    text_surf = font_small.render(f"{item['name']} ${item['price']}", True, (255, 255, 255))
+                    screen.blit(text_surf, text_surf.get_rect(center=rect.center))
 
-                # hover 顏色
-                mx, my = pg.mouse.get_pos()
-                buy_color = (0, 200, 0) if self.shop_page == "buy" else (100, 100, 100)
-                sell_color = (200, 0, 0) if self.shop_page == "sell" else (100, 100, 100)
+            elif self.shop_page == "sell":
+                # 顯示背包可賣道具列表
+                for i, item in enumerate(self.game_manager.bag.items):
+                    btn_w, btn_h = 140, 40
+                    x = overlay_rect.x + 40
+                    y = overlay_rect.y + 80 + i * 50
+                    rect = pg.Rect(x, y, btn_w, btn_h)
+                    self.shop_item_buttons.append((rect, item))
 
-                pg.draw.rect(screen, buy_color, self.buy_tab_rect)
-                pg.draw.rect(screen, sell_color, self.sell_tab_rect)
+                    mx, my = pg.mouse.get_pos()
+                    color = (200, 0, 0) if rect.collidepoint(mx, my) else (150, 0, 0)
+                    pg.draw.rect(screen, color, rect)
+                    text_surf = font_small.render(f"{item['name']} x{item.get('count',1)}", True, (255,255,255))
+                    screen.blit(text_surf, text_surf.get_rect(center=rect.center))
 
-                font = pg.font.SysFont(None, 24)
-                buy_text = font.render("BUY", True, (255,255,255))
-                sell_text = font.render("SELL", True, (255,255,255))
-                screen.blit(buy_text, buy_text.get_rect(center=self.buy_tab_rect.center))
-                screen.blit(sell_text, sell_text.get_rect(center=self.sell_tab_rect.center))
-
-                if self.shop_page == "buy":
-                    # 顯示可買道具列表和 Buy 按鈕
-                    self.buy_button_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 80)
-                    color = self.buy_button_hover_color if self.is_buy_hover else self.buy_button_color
-                    pg.draw.rect(screen, color, self.buy_button_rect)
-                    screen.blit(self.buy_button_image, self.buy_button_rect.topleft)
-                elif self.shop_page == "sell":
-                    # 顯示背包可賣道具列表和 Sell 按鈕
-                    self.sell_button_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 80)
-                    color = self.sell_button_hover_color if self.is_sell_hover else self.sell_button_color
-                    pg.draw.rect(screen, color, self.sell_button_rect)
-                    screen.blit(self.sell_button_image, self.sell_button_rect.topleft)
-                    
-                    # 顯示可賣道具列表
-                    small_font = pg.font.SysFont(None, 28)
-                    for i, item in enumerate(self.game_manager.bag.items):
-                        name = item["name"]
-                        count = item.get("count", 1)
-                        it_text = small_font.render(f"{i+1}. {name} x{count}", True, (255, 255, 255))
-                        screen.blit(it_text, (overlay_rect.x + 40, overlay_rect.y + 120 + i*35))
 
                     # ===== Draw Minimap (UI Overlay) =====
         if not self.overlay_open and not self.shop_overlay_open and not self.nav_overlay_open:
