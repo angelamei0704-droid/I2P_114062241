@@ -151,14 +151,24 @@
         "max_hp": 220,
         "level": 40,
         "sprite_path": "menu_sprites/menusprite6.png",
-        "element": "Dragon",
+        "element": "Ice",
         "evolves_to": null
       }
     ],
     "items": [
       {
-        "name": "Potion",
+        "name": "Heal Potion",
         "count": 5,
+        "sprite_path": "ingame_ui/potion.png"
+      },
+      {
+        "name": "Strength Potion",
+        "count": 2,
+        "sprite_path": "ingame_ui/potion.png"
+      },
+      {
+        "name": "Defense Potion",
+        "count": 3,
         "sprite_path": "ingame_ui/potion.png"
       },
       {

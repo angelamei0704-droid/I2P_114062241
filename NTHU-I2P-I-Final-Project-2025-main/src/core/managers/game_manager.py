@@ -163,3 +163,4 @@ class GameManager:
         gm.bag = Bag.from_dict(data.get("bag", {})) if data.get("bag") else Bag([], [])
         gm.player_spawns = {k: maps[k].spawn for k in maps}
         return gm
+

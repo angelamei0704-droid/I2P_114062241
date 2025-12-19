@@ -119,8 +119,49 @@ class GameScene(Scene):
         self.sell_button_rect = self.sell_button_image.get_rect()
         self.is_sell_hover = False
 
+        # ===== MINIMAP SETTINGS =====
+        self.minimap_width = 180
+        self.minimap_height = 180
+        self.minimap_pos = (10, 10)  # 左上角
+        self.minimap_surface = pg.Surface(
+            (self.minimap_width, self.minimap_height)
+        )
+
+        self.minimap_tile_size = 4  # 每個 tile 縮小成 4x4 像素，可調整
+        
+        # Shop 分頁狀態
+        self.shop_page = "buy"  # 可選 "buy" 或 "sell"
+        # Shop tab 按鈕位置
+        self.buy_tab_rect = pg.Rect(0, 0, 100, 30)
+        self.sell_tab_rect = pg.Rect(0, 0, 100, 30)
+
+        # ===== 讀取寶可夢圖片 =====
+        for monster in self.game_manager.bag.monsters:
+            path = monster.get("sprite_path")
+            if path:
+                # 假設你的圖片放在 assets/images/
+                monster["sprite_image"] = pg.image.load(f"assets/images/{path}").convert_alpha()
 
 
+        # ===== 導航目的地 =====
+        TS = GameSettings.TILE_SIZE
+        self.nav_places = [
+            {"name": "House", "pos": (16*TS, 28*TS)},
+            {"name": "Garden", "pos": (10*TS, 25*TS)}
+        ]
+        # 用於按鈕循環導航
+        # ===== 導航按鈕 =====
+        self.nav_image = pg.image.load("assets/images/UI/button_play.png")
+        self.nav_hover = pg.image.load("assets/images/UI/button_play_hover.png")
+        self.nav_rect = self.nav_image.get_rect()
+        self.is_nav_hover = False
+
+        # ===== Navigation UI State =====
+        self.nav_overlay_open = False     # 是否顯示導航選單
+        self.nav_target = None            # 目前導航目標 (x, y)
+        self.nav_in_progress = False      # 是否正在導航
+        self.house_btn = None
+        self.garden_btn = None
 
     @override
     def enter(self) -> None:
@@ -139,9 +180,6 @@ class GameScene(Scene):
         ]
 
         # teleport 草叢（你指定位置 px + 10 * TS）
-        self.teleport_bushes = [
-            pg.Rect(px + 5 * TS, py, TS, TS),
-        ]
         player = self.game_manager.player
         px, py = player.position.x, player.position.y
         TS = GameSettings.TILE_SIZE
@@ -182,12 +220,14 @@ class GameScene(Scene):
                     self.overlay_type = "backpack"
 
         # ===== 更新遊戲物件 =====
-        if not self.overlay_open and not self.shop_overlay_open:
+
+        if not self.overlay_open and not self.shop_overlay_open and not self.nav_overlay_open:
             if self.game_manager.player:
-                self.game_manager.player.update(dt)
-            for enemy in self.game_manager.current_enemy_trainers:
-                enemy.update(dt)
-            self.game_manager.bag.update(dt)
+                if not self.nav_in_progress:
+                    self.game_manager.player.update(dt)
+                else:
+                    self.update_navigation(dt)
+
 
             if self.game_manager.player:
                 self.game_manager.try_switch_map()
@@ -210,15 +250,6 @@ class GameScene(Scene):
                         Logger.error("catch_pokemon scene not found!")
                     return
 
-        # 玩家碰到 teleport 草叢 → 進入 NewMapScene
-        for bush in self.teleport_bushes:
-            if self.game_manager.player.rect.colliderect(bush):
-                Logger.info("Player touched teleport bush → Switching to NewMapScene")
-                if "new_map" in scene_manager._scenes:
-                    scene_manager.change_scene("new_map")
-                else:
-                    Logger.error("new_map scene not found!")
-                return
 
         # ===== Shop NPC Interaction =====
         if self.shop_npc_rect and self.game_manager.player:
@@ -228,6 +259,13 @@ class GameScene(Scene):
             interaction_range = GameSettings.TILE_SIZE * 1.5 
             # 建立一個稍微擴大的 NPC 矩形，用於更寬鬆的互動偵測
             interact_rect = self.shop_npc_rect.inflate(interaction_range, interaction_range)
+        screen_width = pg.display.get_surface().get_width()
+        self.nav_rect.topright = (screen_width - 20, self.backpack_rect.bottom + 10)
+
+        screen_width = pg.display.get_surface().get_width()
+        self.nav_rect.topright = (screen_width - 20, self.backpack_rect.bottom + 10)
+        self.update_navigation(dt)
+        self.is_nav_hover = self.nav_rect.collidepoint(mx, my)
 
     # ===== 判斷玩家是否靠近 NPC =====
     def is_warning_active(self) -> bool:
@@ -236,6 +274,50 @@ class GameScene(Scene):
             if getattr(enemy, "detected", False):
                 return True
         return False
+
+
+    def draw_minimap(self, screen: pg.Surface):
+        current_map = self.game_manager.current_map
+        player = self.game_manager.player
+        if not current_map or not player:
+            return
+
+        tiles = current_map.tmxdata.layers[0].data  # 2D list
+        map_h = len(tiles)
+        map_w = len(tiles[0])
+
+        mini_ts = self.minimap_tile_size
+
+        self.minimap_surface = pg.Surface((map_w * mini_ts, map_h * mini_ts))
+        self.minimap_surface.fill((0, 0, 0))  # 背景黑色
+
+
+        for layer in current_map.tmxdata.visible_layers:
+            if hasattr(layer, "data"):  # tile layer
+                for y, row in enumerate(layer.data):
+                    for x, tile_gid in enumerate(row):
+                        if tile_gid != 0:
+                            tile_image = current_map.tmxdata.get_tile_image_by_gid(tile_gid)
+                            if tile_image:
+                                tile_surf = pg.transform.smoothscale(tile_image, (mini_ts, mini_ts))
+                                self.minimap_surface.blit(tile_surf, (x * mini_ts, y * mini_ts))
+
+
+        # 畫玩家位置
+        px = int(player.position.x / GameSettings.TILE_SIZE * mini_ts)
+        py = int(player.position.y / GameSettings.TILE_SIZE * mini_ts)
+        pg.draw.circle(self.minimap_surface, (255, 0, 0), (px, py), 3)
+
+        # 畫邊框
+        pg.draw.rect(self.minimap_surface, (255, 255, 255), self.minimap_surface.get_rect(), 1)
+
+        # blit 到畫面
+        screen.blit(self.minimap_surface, self.minimap_pos)
+
+        
+
+
+
 
     @override
     def handle_event(self, event):
@@ -263,6 +345,8 @@ class GameScene(Scene):
                 if self.overlay_open:
                     self.overlay_open = False
                     self.overlay_type = None
+                if self.nav_overlay_open:
+                    self.nav_overlay_open = False
 
             # SPACE 鍵：觸發戰鬥
             elif event.key == pg.K_SPACE:
@@ -273,9 +357,10 @@ class GameScene(Scene):
                     else:
                         Logger.error("Battle scene not found")
 
+
             # 商店操作：B 買、S 賣
             if self.shop_overlay_open:
-                if event.key == pg.K_b:
+                if self.shop_page == "buy" and event.key == pg.K_b:
                     price = 300
                     if self.game_manager.bag.money >= price:
                         self.game_manager.bag.money -= price
@@ -283,7 +368,7 @@ class GameScene(Scene):
                         Logger.info("Bought Potion")
                     else:
                         Logger.info("Not enough money")
-                elif event.key == pg.K_s:
+                elif self.shop_page == "sell" and event.key == pg.K_s:
                     sell_price = 150
                     if self.game_manager.bag.has_item("potion"):
                         self.game_manager.bag.remove_item("potion", 1)
@@ -323,7 +408,8 @@ class GameScene(Scene):
             if event.type == pg.MOUSEBUTTONDOWN and event.button == 1 and self.shop_overlay_open:
                 mx, my = pg.mouse.get_pos()
                 # Buy Pokeball
-                if self.buy_button_rect.collidepoint(mx, my):
+                # Buy Pokeball
+                if self.shop_page == "buy" and self.buy_button_rect.collidepoint(mx, my):
                     price = 200
                     if self.game_manager.bag.money >= price:
                         self.game_manager.bag.money -= price
@@ -332,7 +418,7 @@ class GameScene(Scene):
                     else:
                         Logger.info("Not enough money")
                 # Sell Pokeball
-                elif self.sell_button_rect.collidepoint(mx, my):
+                elif self.shop_page == "sell" and self.sell_button_rect.collidepoint(mx, my):
                     sell_price = 100
                     if self.game_manager.bag.has_item("pokeball"):
                         self.game_manager.bag.remove_item("pokeball", 1)
@@ -341,6 +427,13 @@ class GameScene(Scene):
                     else:
                         Logger.info("No Pokeball to sell")
 
+
+                if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
+                    mx, my = pg.mouse.get_pos()
+                    if self.buy_tab_rect.collidepoint(mx, my):
+                        self.shop_page = "buy"
+                    elif self.sell_tab_rect.collidepoint(mx, my):
+                        self.shop_page = "sell"
 
 
         elif event.type == pg.MOUSEBUTTONUP and event.button == 1:
@@ -352,7 +445,43 @@ class GameScene(Scene):
             self.volume = max(0, min(100, int(relative_x / self.slider_rect.width * 100)))
             if sound_manager.current_bgm:
                 sound_manager.current_bgm.set_volume(self.volume / 100)
+        
+        if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
+            if self.nav_rect.collidepoint(mx, my):
+                Logger.info("Open navigation overlay")
+                self.nav_overlay_open = True
+                self.overlay_open = False
+                self.shop_overlay_open = False
+                return
 
+            if self.nav_overlay_open and self.house_btn and self.garden_btn:
+                if self.house_btn.collidepoint(mx, my):
+                    self.start_navigation(self.nav_places[0]["pos"])
+                    self.nav_overlay_open = False
+
+                elif self.garden_btn.collidepoint(mx, my):
+                    self.start_navigation(self.nav_places[1]["pos"])
+                    self.nav_overlay_open = False
+
+
+    def start_navigation(self, target_pos):
+        self.nav_target = target_pos
+        self.nav_in_progress = True
+
+    def update_navigation(self, dt):
+        if getattr(self, "nav_in_progress", False) and self.game_manager.player:
+            px, py = self.game_manager.player.position.x, self.game_manager.player.position.y
+            tx, ty = self.nav_target
+            speed = 100 * dt  # 每秒 100 像素
+            dx, dy = tx - px, ty - py
+            dist = (dx**2 + dy**2)**0.5
+            if dist < speed:
+                self.game_manager.player.position.x = tx
+                self.game_manager.player.position.y = ty
+                self.nav_in_progress = False
+            else:
+                self.game_manager.player.position.x += dx / dist * speed
+                self.game_manager.player.position.y += dy / dist * speed
 
     @override
     def draw(self, screen: pg.Surface):
@@ -381,24 +510,8 @@ class GameScene(Scene):
         # ===== Draw UI Buttons =====
         screen.blit(self.top_right_hover if self.is_top_right_hover else self.top_right_image, self.top_right_rect)
         screen.blit(self.backpack_hover if self.is_backpack_hover else self.backpack_image, self.backpack_rect)
+        screen.blit(self.nav_hover if self.is_nav_hover else self.nav_image, self.nav_rect)
 
-        # ===== Draw teleport bush 提示 =====
-        for bush in self.teleport_bushes:
-            rect_on_screen = pg.Rect(
-                bush.x - camera.x,
-                bush.y - camera.y,
-                bush.width,
-                bush.height
-            )
-            s = pg.Surface((rect_on_screen.width, rect_on_screen.height), pg.SRCALPHA)
-            s.fill((255, 0, 0, 100))
-            screen.blit(s, rect_on_screen.topleft)
-
-            font = pg.font.SysFont(None, 24)
-            text = font.render("TELEPORT", True, (255, 255, 255))
-            text_rect = text.get_rect(center=rect_on_screen.center)
-            screen.blit(text, text_rect)
-        # ===== Draw Extra Hint =====
         # ===== Draw Extra Hint =====
         TS = GameSettings.TILE_SIZE
 
@@ -426,8 +539,8 @@ class GameScene(Scene):
             dim.fill((0, 0, 0))
             screen.blit(dim, (0, 0))
 
-            overlay_width = int(self.overlay_image.get_width() * 10)
-            overlay_height = int(self.overlay_image.get_height() * 10)
+            overlay_width = int(self.overlay_image.get_width() * 14)
+            overlay_height = int(self.overlay_image.get_height() * 14)
             overlay_scaled = pg.transform.smoothscale(self.overlay_image, (overlay_width, overlay_height))
             overlay_rect = overlay_scaled.get_rect(center=(screen.get_width()//2, screen.get_height()//2))
             screen.blit(overlay_scaled, overlay_rect.topleft)
@@ -471,14 +584,24 @@ class GameScene(Scene):
                     level = monster.get("level", 1)
                     hp = monster.get("hp", 0)
                     max_hp = monster.get("max_hp", 0)
-                    m_text = small_font.render(f"{i+1}. {name}  Lv:{level}  HP:{hp}/{max_hp}", True, (255, 255, 255))
-                    screen.blit(m_text, (overlay_rect.x + 40, overlay_rect.y + 80 + i*30))
+                    element = monster.get("element", "Unknown")
+
+
+                    # 畫圖片
+                    sprite_img = monster.get("sprite_image")
+                    if sprite_img:
+                        screen.blit(sprite_img, (overlay_rect.x + 10, overlay_rect.y + 80 + i*50))  # 調整間距和位置
+
+                    # 畫文字
+                    m_text = small_font.render(f"{i+1}. {name}  Lv:{level}  HP:{hp}/{max_hp} Element:{element} " , True, (255, 255, 255))
+                    screen.blit(m_text, (overlay_rect.x + 80, overlay_rect.y + 80 + i*50))
+
 
                 for i, item in enumerate(self.game_manager.bag.items):
                     name = item["name"]
                     count = item.get("count", 1)
                     it_text = small_font.render(f"{i+1}. {name} x{count}", True, (255, 255, 255))
-                    screen.blit(it_text, (overlay_rect.x + overlay_width//2 + 20, overlay_rect.y + 80 + i*30))
+                    screen.blit(it_text, (overlay_rect.x + overlay_width//2 + 80, overlay_rect.y + 80 + i*30))
 
                 btn_y = overlay_rect.bottom - 60
                 self.back_rect.topleft = (overlay_rect.centerx - self.back_rect.width//2, btn_y)
@@ -543,20 +666,9 @@ class GameScene(Scene):
 
             # 鍵盤提示
             keyboard_hint = small_font.render("You can press B to buy Potion, S to sell Potion", True, (255, 255, 255))
-            screen.blit(keyboard_hint, (overlay_rect.x + 40, overlay_rect.y + 90))
+            screen.blit(keyboard_hint, (overlay_rect.x + 40, overlay_rect.y + 280))
 
-            # Buy Pokeball 按鈕
-            self.buy_button_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 140)
-            color = self.buy_button_hover_color if self.is_buy_hover else self.buy_button_color
-            pg.draw.rect(screen, color, self.buy_button_rect)
-            screen.blit(self.buy_button_image, self.buy_button_rect.topleft)
-
-            # Sell Pokeball 按鈕
-            self.sell_button_rect.topleft = (overlay_rect.x + 180, overlay_rect.y + 140)
-            color = self.sell_button_hover_color if self.is_sell_hover else self.sell_button_color
-            pg.draw.rect(screen, color, self.sell_button_rect)
-            screen.blit(self.sell_button_image, self.sell_button_rect.topleft)
-
+           
             # 玩家金錢
             money = self.game_manager.bag.money if self.game_manager.player else 0
             money_text = small_font.render(f"Your Money: ${money}", True, (255, 220, 100))
@@ -569,14 +681,93 @@ class GameScene(Scene):
                 count = item.get("count", 1)
                 it_text = small_font.render(f"{i+1}. {name} x{count}", True, (255, 255, 255))
                 screen.blit(it_text, (overlay_rect.x + overlay_width//2 + 20, overlay_rect.y + 120 + i*35))
-        # ===== Draw Shop Buy Button =====
-            if self.shop_overlay_open:
-                btn_x = overlay_rect.x + 40
-                btn_y = overlay_rect.y + 180
-                self.buy_button_rect.topleft = (btn_x, btn_y)
-                color = self.buy_button_hover_color if self.is_buy_hover else self.buy_button_color
-                pg.draw.rect(screen, color, self.buy_button_rect)
+
+                # Tab 按鈕位置
+                self.buy_tab_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 30)
+                self.sell_tab_rect.topleft = (overlay_rect.x + 160, overlay_rect.y + 30)
+
+                # hover 顏色
+                mx, my = pg.mouse.get_pos()
+                buy_color = (0, 200, 0) if self.shop_page == "buy" else (100, 100, 100)
+                sell_color = (200, 0, 0) if self.shop_page == "sell" else (100, 100, 100)
+
+                pg.draw.rect(screen, buy_color, self.buy_tab_rect)
+                pg.draw.rect(screen, sell_color, self.sell_tab_rect)
+
                 font = pg.font.SysFont(None, 24)
-                text = font.render("BUY", True, (255, 255, 255))
-                text_rect = text.get_rect(center=self.buy_button_rect.center)
-                screen.blit(text, text_rect)
+                buy_text = font.render("BUY", True, (255,255,255))
+                sell_text = font.render("SELL", True, (255,255,255))
+                screen.blit(buy_text, buy_text.get_rect(center=self.buy_tab_rect.center))
+                screen.blit(sell_text, sell_text.get_rect(center=self.sell_tab_rect.center))
+
+                if self.shop_page == "buy":
+                    # 顯示可買道具列表和 Buy 按鈕
+                    self.buy_button_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 80)
+                    color = self.buy_button_hover_color if self.is_buy_hover else self.buy_button_color
+                    pg.draw.rect(screen, color, self.buy_button_rect)
+                    screen.blit(self.buy_button_image, self.buy_button_rect.topleft)
+                elif self.shop_page == "sell":
+                    # 顯示背包可賣道具列表和 Sell 按鈕
+                    self.sell_button_rect.topleft = (overlay_rect.x + 40, overlay_rect.y + 80)
+                    color = self.sell_button_hover_color if self.is_sell_hover else self.sell_button_color
+                    pg.draw.rect(screen, color, self.sell_button_rect)
+                    screen.blit(self.sell_button_image, self.sell_button_rect.topleft)
+                    
+                    # 顯示可賣道具列表
+                    small_font = pg.font.SysFont(None, 28)
+                    for i, item in enumerate(self.game_manager.bag.items):
+                        name = item["name"]
+                        count = item.get("count", 1)
+                        it_text = small_font.render(f"{i+1}. {name} x{count}", True, (255, 255, 255))
+                        screen.blit(it_text, (overlay_rect.x + 40, overlay_rect.y + 120 + i*35))
+
+                    # ===== Draw Minimap (UI Overlay) =====
+        if not self.overlay_open and not self.shop_overlay_open and not self.nav_overlay_open:
+            self.draw_minimap(screen)
+        # ===== Navigation Overlay =====
+        if self.nav_overlay_open:
+            # 半透明背景
+            dim = pg.Surface(screen.get_size())
+            dim.set_alpha(150)
+            dim.fill((0, 0, 0))
+            screen.blit(dim, (0, 0))
+
+            # 中央框
+            box = pg.Rect(
+                screen.get_width()//2 - 200,
+                screen.get_height()//2 - 150,
+                400,
+                300
+            )
+            pg.draw.rect(screen, (40, 40, 40), box, border_radius=12)
+            pg.draw.rect(screen, (200, 200, 200), box, 3, border_radius=12)
+
+            font = pg.font.SysFont(None, 36)
+
+            title = font.render("Choose Destination", True, (255, 255, 255))
+            screen.blit(title, title.get_rect(center=(box.centerx, box.top + 30)))
+
+            # House 按鈕
+            self.house_btn = pg.Rect(box.centerx - 120, box.centery - 20, 240, 40)
+            pg.draw.rect(screen, (100, 100, 255), self.house_btn, border_radius=8)
+            screen.blit(
+                font.render("House", True, (255, 255, 255)),
+                font.render("House", True, (255, 255, 255)).get_rect(center=self.house_btn.center)
+            )
+
+            # Garden 按鈕
+            self.garden_btn = pg.Rect(box.centerx - 120, box.centery + 40, 240, 40)
+            pg.draw.rect(screen, (100, 200, 100), self.garden_btn, border_radius=8)
+            screen.blit(
+                font.render("Garden", True, (255, 255, 255)),
+                font.render("Garden", True, (255, 255, 255)).get_rect(center=self.garden_btn.center)
+            )
+        # ===== Navigation Arrow =====
+        if self.nav_in_progress and self.game_manager.player:
+            px = self.game_manager.player.position.x - camera.x
+            py = self.game_manager.player.position.y - camera.y
+            tx = self.nav_target[0] - camera.x
+            ty = self.nav_target[1] - camera.y
+
+            pg.draw.line(screen, (255, 255, 0), (px, py), (tx, ty), 4)
+            pg.draw.circle(screen, (255, 0, 0), (int(tx), int(ty)), 8)
