@@ -181,6 +181,8 @@ class GameScene(Scene):
         # ===== Garden 花瓣粒子 =====
         self.garden_particles = []  # 粒子列表
         self.show_garden_particles = False  # 是否啟用特效
+        self.garden_particles_start_time = 0   # 粒子開始時間
+        self.garden_particles_duration = 5000  # 持續 5 秒 (毫秒)
 
 
 
@@ -310,31 +312,36 @@ class GameScene(Scene):
         self.is_nav_hover = self.nav_rect.collidepoint(mx, my)
 
         if self.show_garden_particles:
-            # 隨機生成新粒子
-            if len(self.garden_particles) < 50:  # 最多 50 粒
-                x = self.game_manager.player.position.x + (pg.time.get_ticks() % 50 - 25)
-                y = self.game_manager.player.position.y
-                self.garden_particles.append({
-                    "pos": [x, y],
-                    "vel": [0, -50 * dt],  # 向上飄
-                    "color": (255, 100 + pg.time.get_ticks()%155, 200),  # 粉色系
-                    "size": 3 + pg.time.get_ticks()%3,
-                    "birth_time": pg.time.get_ticks(),  # 新增生成時間
-                    "lifetime": 2000  # 存活時間，單位毫秒
-                })
-
-            # 更新粒子位置
             current_time = pg.time.get_ticks()
-            for p in self.garden_particles:
-                p["pos"][0] += p["vel"][0] * dt
-                p["pos"][1] += p["vel"][1] * dt
 
-            # 移除離開屏幕或超過生命時間的粒子
-            self.garden_particles = [
-                p for p in self.garden_particles
-                if p["pos"][1] > 0 and current_time - p["birth_time"] < p["lifetime"]
-            ]
+            # 超過 5 秒就停止特效
+            if current_time - self.garden_particles_start_time >= self.garden_particles_duration:
+                self.show_garden_particles = False
+                self.garden_particles.clear()  # 清空粒子
+            else:
+                # 隨機生成新粒子
+                if len(self.garden_particles) < 50:
+                    x = self.game_manager.player.position.x + (pg.time.get_ticks() % 50 - 25)
+                    y = self.game_manager.player.position.y
+                    self.garden_particles.append({
+                        "pos": [x, y],
+                        "vel": [0, -50 * dt],  # 向上飄
+                        "color": (255, 100 + pg.time.get_ticks()%155, 200),
+                        "size": 3 + pg.time.get_ticks()%3,
+                        "birth_time": pg.time.get_ticks(),
+                        "lifetime": 2000
+                    })
 
+                # 更新粒子位置
+                for p in self.garden_particles:
+                    p["pos"][0] += p["vel"][0] * dt
+                    p["pos"][1] += p["vel"][1] * dt
+
+                # 移除超過生命時間的粒子
+                self.garden_particles = [
+                    p for p in self.garden_particles
+                    if current_time - p["birth_time"] < p["lifetime"]
+                ]
 
 
     # ===== 判斷玩家是否靠近 NPC =====
@@ -560,6 +567,7 @@ class GameScene(Scene):
             for place in self.nav_places:
                 if (tx, ty) == place["pos"] and place["name"] == "Garden":
                     self.show_garden_particles = True  # 啟動灑花效果
+                    self.garden_particles_start_time = pg.time.get_ticks()  # 記錄開始時間
 
             else:
                 self.game_manager.player.position.x += dx / dist * speed
