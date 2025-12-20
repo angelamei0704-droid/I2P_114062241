@@ -178,6 +178,9 @@ class GameScene(Scene):
         self.shop_item_buttons = []  # 滑鼠按鈕
         
         self.bush_triggered = False
+        # ===== Garden 花瓣粒子 =====
+        self.garden_particles = []  # 粒子列表
+        self.show_garden_particles = False  # 是否啟用特效
 
 
 
@@ -189,13 +192,22 @@ class GameScene(Scene):
             self.online_manager.enter()
         TS = GameSettings.TILE_SIZE
     # ===== 檢查是否從 CatchPokemonScene 回來 =====
-        if hasattr(scene_manager, "game_state") and scene_manager.game_state.get("from_scene") == "catch_pokemon":
-            if self.game_manager.player:
+        # ===== 從 CatchPokemonScene 回來 =====
+        if hasattr(scene_manager, "game_state"):
+            # 加怪進 bag
+            monster = scene_manager.game_state.get("caught_monster")
+            if monster:
+                self.game_manager.bag.add_monster(monster)
+                Logger.info(f"Added monster to bag: {monster['name']}")
+                scene_manager.game_state.pop("caught_monster")
+
+            # 設定玩家位置
+            if scene_manager.game_state.get("from_scene") == "catch_pokemon":
+                TS = GameSettings.TILE_SIZE
                 self.game_manager.player.position.x = 16 * TS
                 self.game_manager.player.position.y = 30 * TS
-                Logger.info("Returned from CatchPokemonScene → Player set to (16,30)")
-            # 清掉狀態，避免重複觸發
-            scene_manager.game_state.pop("from_scene")
+                scene_manager.game_state.pop("from_scene")
+
 
 
         # ===== 在玩家位置生成草叢 =====
@@ -296,6 +308,32 @@ class GameScene(Scene):
         self.nav_rect.topright = (screen_width - 20, self.backpack_rect.bottom + 10)
         self.update_navigation(dt)
         self.is_nav_hover = self.nav_rect.collidepoint(mx, my)
+
+        if self.show_garden_particles:
+            # 隨機生成新粒子
+            if len(self.garden_particles) < 50:  # 最多 50 粒
+                x = self.game_manager.player.position.x + (pg.time.get_ticks() % 50 - 25)
+                y = self.game_manager.player.position.y
+                self.garden_particles.append({
+                    "pos": [x, y],
+                    "vel": [0, -50 * dt],  # 向上飄
+                    "color": (255, 100 + pg.time.get_ticks()%155, 200),  # 粉色系
+                    "size": 3 + pg.time.get_ticks()%3,
+                    "birth_time": pg.time.get_ticks(),  # 新增生成時間
+                    "lifetime": 2000  # 存活時間，單位毫秒
+                })
+
+            # 更新粒子位置
+            current_time = pg.time.get_ticks()
+            for p in self.garden_particles:
+                p["pos"][0] += p["vel"][0] * dt
+                p["pos"][1] += p["vel"][1] * dt
+
+            # 移除離開屏幕或超過生命時間的粒子
+            self.garden_particles = [
+                p for p in self.garden_particles
+                if p["pos"][1] > 0 and current_time - p["birth_time"] < p["lifetime"]
+            ]
 
 
 
@@ -518,7 +556,14 @@ class GameScene(Scene):
             else:
                 self.game_manager.player.position.x += dx / dist * speed
                 self.game_manager.player.position.y += dy / dist * speed
+            # 到達目的地判斷
+            for place in self.nav_places:
+                if (tx, ty) == place["pos"] and place["name"] == "Garden":
+                    self.show_garden_particles = True  # 啟動灑花效果
 
+            else:
+                self.game_manager.player.position.x += dx / dist * speed
+                self.game_manager.player.position.y += dy / dist * speed
     @override
     def draw(self, screen: pg.Surface):
         camera = self.game_manager.player.camera if self.game_manager.player else PositionCamera(0, 0)
@@ -839,3 +884,6 @@ class GameScene(Scene):
 
             pg.draw.line(screen, (255, 255, 0), (px, py), (tx, ty), 4)
             pg.draw.circle(screen, (255, 0, 0), (int(tx), int(ty)), 8)
+        if self.show_garden_particles:
+            for p in self.garden_particles:
+                pg.draw.circle(screen, p["color"], (int(p["pos"][0] - camera.x), int(p["pos"][1] - camera.y)), p["size"])

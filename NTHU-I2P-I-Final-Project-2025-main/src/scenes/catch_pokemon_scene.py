@@ -20,7 +20,7 @@ class CatchPokemonScene(Scene):
 
         # ===== 寶可夢精靈 =====
         self.pokemon_sprite = Sprite(
-            r"C:\Users\angel\OneDrive\Desktop\NTHU-I2P-I-Final-Project-2025-main\NTHU-I2P-I-Final-Project-2025-main\assets\images\menu_sprites\menusprite6.png",
+            r"C:\Users\angel\OneDrive\Desktop\NTHU-I2P-I-Final-Project-2025-main\NTHU-I2P-I-Final-Project-2025-main\assets\images\menu_sprites\menusprite7.png",
             (128, 128)
         )
         self.pokemon_pos = Position(GameSettings.SCREEN_WIDTH//2 + 100, GameSettings.SCREEN_HEIGHT//2)
@@ -105,7 +105,7 @@ class CatchPokemonScene(Scene):
             new_height = max(1, int(self.pokemon_current_size[1] * (1 - 0.8 * t)))
             self.pokemon_sprite.image = pg.transform.smoothscale(
                 pg.image.load(
-                    r"C:\Users\angel\OneDrive\Desktop\NTHU-I2P-I-Final-Project-2025-main\NTHU-I2P-I-Final-Project-2025-main\assets\images\menu_sprites\menusprite6.png"
+                    r"C:\Users\angel\OneDrive\Desktop\NTHU-I2P-I-Final-Project-2025-main\NTHU-I2P-I-Final-Project-2025-main\assets\images\menu_sprites\menusprite7.png"
                 ).convert_alpha(),
                 (new_width, new_height)
             )
@@ -113,6 +113,17 @@ class CatchPokemonScene(Scene):
             if t >= 1.0:
                 self.catching = False
                 self.catch_finished = True
+                monster = {
+                    "name": "Wild Pokemon",
+                    "level": 1,
+                    "hp": 30,
+                    "max_hp": 30,
+                    "element": "Grass",
+                    "sprite_path": "menu_sprites/menusprite7.png"
+                }
+                self.scene_manager.game_state["caught_monster"] = monster
+                self.scene_manager.game_state["from_scene"] = "catch_pokemon"
+                Logger.info("Monster saved to game_state")
 
     def draw(self, screen):
         if self.catch_finished:

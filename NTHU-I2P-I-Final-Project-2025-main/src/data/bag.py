@@ -140,3 +140,5 @@ class Bag:
         money = data.get("money", 1000)
 
         return cls(monsters, items, money)
+    def add_monster(self, monster: Monster):
+        self._monsters_data.append(monster)
