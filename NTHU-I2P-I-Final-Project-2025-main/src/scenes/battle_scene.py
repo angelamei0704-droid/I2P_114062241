@@ -42,7 +42,7 @@ class BattleScene(Scene):
 
         # ===== 角色圖 =====
         self.player_img = pg.image.load("assets/images/menu_sprites/menusprite8.png").convert_alpha()
-        self.player_img = pg.transform.scale(self.player_img, (150, 150))
+        self.player_img = pg.transform.scale(self.player_img, (200, 200))
         self.enemy_img = pg.image.load("assets/images/menu_sprites/menusprite2.png").convert_alpha()
         self.enemy_img = pg.transform.scale(self.enemy_img, (150, 150))
 
@@ -62,9 +62,9 @@ class BattleScene(Scene):
         self.winner = None
 
         # ===== 按鈕 =====
-        self.buttons = ["Attack", "Attack+Run Away", "Start"]
-        self.button_widths = [150, 300, 150]
-        self.button_heights = [50, 50, 50]
+        self.buttons = ["Attack", "Attack+Run Away","Heal Potion","Strength Potion","Defense Potion","Start"]
+        self.button_widths = [150, 300, 150,150,150,150]
+        self.button_heights = [50, 50, 50,50,50,50]
         self.button_pressed_index = None
 
         # ===== 攻擊動畫控制 =====
@@ -74,6 +74,9 @@ class BattleScene(Scene):
         self.attack_target_pos = None
         self.attack_speed = 500
         self.attack_delay_timer = 0.0
+        
+        self.damage_texts = []  # 每個元素: {"text": "-34", "pos": [x, y], "timer": 0.0}
+
 
         # ===== Run Away動畫控制 =====
         self.running_away = False
@@ -88,6 +91,7 @@ class BattleScene(Scene):
 
         # ===== 字型 =====
         self.font = pg.font.SysFont(None, 36)
+        self.small_font = pg.font.SysFont(None, 20) 
         self.over_font = pg.font.SysFont(None, 60)
         self.turn_font = pg.font.SysFont(None, 28)
 
@@ -117,7 +121,89 @@ class BattleScene(Scene):
 
         self.attack_images["Electric"] = pg.transform.scale(self.attack_images["Electric"], (50, 50))
         self.attack_images["Water"] = pg.transform.scale(self.attack_images["Water"], (50, 50))
+        self.items = {
+            "Heal Potion": 2,
+            "Strength Potion": 1,
+            "Defense Potion": 1
+        }
 
+        # ===== 進化動畫 =====
+        self.evolving = False           # 是否在進化動畫中
+        self.evolve_start_pos = None    # 飛出動畫起始位置
+        self.evolve_target_pos = None   # 飛出動畫目標位置
+        self.evolve_img = None          # 飛出動畫的圖
+        self.evolve_speed = 200         # 飛行速度
+
+    def evolve_player(self):
+        game_state = self.scene_manager.game_state
+        player_mon = game_state["bag"]["monsters"][0]
+
+        if player_mon.get("evolved", False):
+            return  # 已經進化過就不再進化
+
+        Logger.info("Pokemon evolved by potion!")
+
+        # 改名字（可選，但很加分）
+        player_mon["name"] = player_mon["name"] + " Evo"
+
+        # 強化數值
+        player_mon["max_hp"] += 40
+        player_mon["hp"] = player_mon["max_hp"]
+        player_mon["attack"] += 15
+        player_mon["defense"] += 5
+
+        # 標記進化
+        player_mon["evolved"] = True
+
+        # 換圖片（一定要）
+        player_mon["image"] = "menusprite16.png"
+
+        # 同步 battle 中的數值
+        self.max_hp = player_mon["max_hp"]
+        self.player_hp = player_mon["hp"]
+        self.player_attack = player_mon["attack"]
+        self.player_defense = player_mon["defense"]
+
+        # 立刻換圖
+        self.player_img = pg.image.load(
+             r"C:\Users\angel\OneDrive\Desktop\NTHU-I2P-I-Final-Project-2025-main\NTHU-I2P-I-Final-Project-2025-main\assets\images\menu_sprites\menusprite16.png"
+        ).convert_alpha()
+        self.player_img = pg.transform.scale(self.player_img, (200, 200))
+
+        self.evolving = False        # 是否在進化動畫中
+        self.evolve_start_pos = None # 起始位置
+        self.evolve_target_pos = None # 結束位置（飛出去）
+        self.evolve_img = None       # 飛出來的圖
+        self.evolve_speed = 200      # 飛行速度
+
+ 
+    def use_item(self, item_name):
+        if self.items.get(item_name, 0) <= 0:
+            Logger.info(f"No {item_name} left")
+            return
+
+        self.items[item_name] -= 1
+
+        if item_name == "Heal Potion":
+            self.player_hp = min(self.max_hp, self.player_hp + 30)
+
+        elif item_name == "Strength Potion":
+            self.player_attack += 10
+
+        elif item_name == "Defense Potion":
+            self.player_defense += 5
+
+        Logger.info(f"Used {item_name}")
+
+        if item_name in ["Heal Potion", "Strength Potion", "Defense Potion"]:
+            original_img = self.player_img   # 1️⃣ 先存原圖給飛出動畫
+            self.evolve_player()  # 進化，這裡已經換成進化後圖
+            # 設置飛出動畫
+            self.evolving = True
+            screen_width, screen_height = pg.display.get_surface().get_size()
+            self.evolve_start_pos = [screen_width // 4 - 75, screen_height // 2 - 75]
+            self.evolve_target_pos = [screen_width // 2, -200]  # 往上飛出畫面
+            self.evolve_img = original_img  # 使用進化前圖
 
     def enter(self):
         Logger.info("Entered Battle Scene")
@@ -190,6 +276,9 @@ class BattleScene(Scene):
                         self.game_started = True
                         Logger.info("Battle Started")
                     elif self.game_started and not self.game_over:
+                        if btn in ["Heal Potion", "Strength Potion", "Defense Potion"]:
+                            self.use_item(btn)
+                            return
                         if self.turn_count % 2 == 1:  # 奇數輪: player先攻
                             if btn == "Attack":
                                 self.action_queue = [("player", "attack"), ("enemy", "attack")]
@@ -268,15 +357,25 @@ class BattleScene(Scene):
             dist = (dx * dx + dy * dy) ** 0.5
             if dist < self.attack_speed * dt:
                 if self.attack_from_player:
-                    self.enemy_hp = max(0, self.enemy_hp - 34)
+                    damage = self.calculate_damage("player")
+                    self.enemy_hp = max(0, self.enemy_hp - damage)
+                    # 加入浮動文字
+                    self.damage_texts.append({
+                        "text": f"-{damage}",
+                        "pos": [self.attack_target_pos[0], self.attack_target_pos[1] - 50],
+                        "timer": 0.0
+                    })
                 else:
-                    if self.running_away and not self.run_pos_hidden:
-                        player_dodged = True
-                    else:
-                        player_dodged = False
+                    player_dodged = self.running_away and not self.run_pos_hidden
                     if not player_dodged:
                         damage = self.calculate_damage("enemy")
                         self.player_hp = max(0, self.player_hp - damage)
+                        self.damage_texts.append({
+                            "text": f"-{damage}",
+                            "pos": [player_pos[0], player_pos[1] - 50],
+                            "timer": 0.0
+                        })
+
 
                 self.attack_in_progress = False
                 self.attack_pos = None
@@ -312,6 +411,23 @@ class BattleScene(Scene):
         elif self.enemy_hp <= 0:
             self.game_over = True
             self.winner = "player"
+        # 進化飛出動畫
+        if self.evolving and self.evolve_img:
+            dx = self.evolve_target_pos[0] - self.evolve_start_pos[0]
+            dy = self.evolve_target_pos[1] - self.evolve_start_pos[1]
+            dist = (dx**2 + dy**2)**0.5
+            step = self.evolve_speed * dt
+            if dist <= step:
+                self.evolving = False  # 飛出去完成
+                
+            else:
+                self.evolve_start_pos[0] += dx / dist * step
+                self.evolve_start_pos[1] += dy / dist * step
+        for dmg in self.damage_texts[:]:
+            dmg["timer"] += dt
+            dmg["pos"][1] -= 30 * dt  # 往上飄
+            if dmg["timer"] > 1.0:
+                self.damage_texts.remove(dmg)
 
     # ========================== Draw ============================
     # ============================================================
@@ -362,12 +478,6 @@ class BattleScene(Scene):
         # 正常背景
             screen.blit(self.background, (0, 0))
 
-        # ===== 角色圖 =====
-        player_draw_pos = player_pos_draw
-        if self.running_away and self.run_start_pos is not None:
-            player_draw_pos = self.run_start_pos
-        screen.blit(self.player_img, player_draw_pos)
-        screen.blit(self.enemy_img, enemy_pos_draw)
 
         # ===== 攻擊動畫 =====
         if self.attack_in_progress and self.attack_pos:
@@ -413,11 +523,24 @@ class BattleScene(Scene):
                 color = (200, 200, 200) if self.button_pressed_index == i else (150, 150, 150)
             else:
                 color = (100, 100, 100)
+            if text in self.items and self.items[text] == 0:
+                color = (80, 80, 80)
 
             pg.draw.rect(screen, color, btn_rect)
-            text_surface = self.font.render(text, True, (255, 255, 255))
+            display_text = text
+            if text in self.items:
+                display_text = f"{text} ({self.items[text]})"
+            text_surface = self.small_font.render(display_text, True, (255, 255, 255))
             text_rect = text_surface.get_rect(center=btn_rect.center)
             screen.blit(text_surface, text_rect)
+
+        # ===== 角色圖 =====
+        player_draw_pos = player_pos_draw
+        if self.running_away and self.run_start_pos is not None:
+            player_draw_pos = self.run_start_pos
+        screen.blit(self.player_img, player_draw_pos)
+        screen.blit(self.enemy_img, enemy_pos_draw)
+
         # ===== 屬性克制表 (右上角) =====
         x_offset = screen_width - 800  # 右邊距離
         y_offset = 20                  # 上方距離
@@ -443,3 +566,12 @@ class BattleScene(Scene):
         screen.blit(enemy_element_text, (enemy_pos_draw[0], enemy_pos_draw[1] + 160))
        
 
+        if self.evolving and self.evolve_img:
+            screen.blit(self.evolve_img, self.evolve_start_pos)
+        else:
+            # 正常畫玩家
+            screen.blit(self.player_img, player_draw_pos)  # 正常畫玩家圖（已經是進化後）
+        for dmg in self.damage_texts:
+            dmg_surface = self.font.render(dmg["text"], True, (255, 0, 0))
+            dmg_rect = dmg_surface.get_rect(center=dmg["pos"])
+            screen.blit(dmg_surface, dmg_rect)
