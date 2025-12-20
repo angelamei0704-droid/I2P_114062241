@@ -83,7 +83,9 @@ class CatchPokemonScene(Scene):
                     self.catching = True
                     self.catch_timer = 0.0
             elif self.catch_finished and self.back_button_rect.collidepoint(mx, my):
-                self.scene_manager.change_scene("game")
+                    safe_x, safe_y = 16, 30  # 你想回去的安全位置
+                    self.scene_manager.game_state["player_pos"] = (safe_x, safe_y)
+                    self.scene_manager.force_change_scene("game")
 
     def update(self, dt):
         if not self.catching and not self.catch_finished:

@@ -133,6 +133,16 @@ class BattleScene(Scene):
         self.evolve_target_pos = None   # 飛出動畫目標位置
         self.evolve_img = None          # 飛出動畫的圖
         self.evolve_speed = 200         # 飛行速度
+        
+        # Potion 飛出動畫
+        self.potion_animating = False
+        self.potion_img = pg.image.load(r"C:\Users\angel\OneDrive\Desktop\NTHU-I2P-I-Final-Project-2025-main\NTHU-I2P-I-Final-Project-2025-main\assets\images\ingame_ui\potion.png").convert_alpha()
+        self.potion_img = pg.transform.scale(self.potion_img, (160, 160))
+        self.potion_pos = None
+        self.potion_target_pos = None
+        self.potion_speed = 300
+        self.potion_type = None  # 記錄是哪個Potion
+
 
     def evolve_player(self):
         game_state = self.scene_manager.game_state
@@ -198,6 +208,12 @@ class BattleScene(Scene):
         if item_name in ["Heal Potion", "Strength Potion", "Defense Potion"]:
             original_img = self.player_img   # 1️⃣ 先存原圖給飛出動畫
             self.evolve_player()  # 進化，這裡已經換成進化後圖
+            self.potion_animating = True
+            screen_width, screen_height = pg.display.get_surface().get_size()
+            self.potion_pos = [screen_width // 4, screen_height // 2 - 120]  # 角色頭上
+            self.potion_target_pos = [self.potion_pos[0], self.potion_pos[1] + 50]  # 飛到角色上方傾倒
+            self.potion_type = item_name
+            
             # 設置飛出動畫
             self.evolving = True
             screen_width, screen_height = pg.display.get_surface().get_size()
@@ -395,6 +411,20 @@ class BattleScene(Scene):
                 pos[0] += move_x
                 pos[1] += move_y
                 return
+        # Potion 飛行動畫
+        if self.potion_animating and self.potion_pos:
+            dx = self.potion_target_pos[0] - self.potion_pos[0]
+            dy = self.potion_target_pos[1] - self.potion_pos[1]
+            dist = (dx**2 + dy**2)**0.5
+            step = self.potion_speed * dt
+            if dist <= step:
+                self.potion_animating = False  # 飛到目標，結束動畫
+                # 可以在這裡加一個小傾倒效果或閃光
+            else:
+                self.potion_pos[0] += dx / dist * step
+                self.potion_pos[1] += dy / dist * step
+
+
 
         # ===== Run Away動畫 =====
         if self.running_away and self.run_start_pos is not None and not self.run_pos_hidden:
@@ -575,3 +605,6 @@ class BattleScene(Scene):
             dmg_surface = self.font.render(dmg["text"], True, (255, 0, 0))
             dmg_rect = dmg_surface.get_rect(center=dmg["pos"])
             screen.blit(dmg_surface, dmg_rect)
+
+        if self.potion_animating and self.potion_pos:
+            screen.blit(self.potion_img, self.potion_pos)

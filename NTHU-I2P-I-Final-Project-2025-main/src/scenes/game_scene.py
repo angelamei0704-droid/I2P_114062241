@@ -176,13 +176,27 @@ class GameScene(Scene):
             {"name": "Defense Potion", "price": 400},
         ]
         self.shop_item_buttons = []  # 滑鼠按鈕
+        
+        self.bush_triggered = False
+
 
 
     @override
     def enter(self) -> None:
+        # 播放 BGM
         sound_manager.play_bgm("RBY 103 Pallet Town.ogg")
         if self.online_manager:
             self.online_manager.enter()
+        TS = GameSettings.TILE_SIZE
+    # ===== 檢查是否從 CatchPokemonScene 回來 =====
+        if hasattr(scene_manager, "game_state") and scene_manager.game_state.get("from_scene") == "catch_pokemon":
+            if self.game_manager.player:
+                self.game_manager.player.position.x = 16 * TS
+                self.game_manager.player.position.y = 30 * TS
+                Logger.info("Returned from CatchPokemonScene → Player set to (16,30)")
+            # 清掉狀態，避免重複觸發
+            scene_manager.game_state.pop("from_scene")
+
 
         # ===== 在玩家位置生成草叢 =====
         player = self.game_manager.player
@@ -190,8 +204,9 @@ class GameScene(Scene):
         TS = GameSettings.TILE_SIZE
 
         # catch_pokemon 草叢
+        TS = GameSettings.TILE_SIZE
         self.bushes = [
-            pg.Rect(px - 10 * TS, py, TS, TS),
+            pg.Rect(9 * TS, 30 * TS, TS, TS),  # x=9, y=30 的 tile
         ]
 
         # teleport 草叢（你指定位置 px + 10 * TS）
@@ -199,7 +214,7 @@ class GameScene(Scene):
         px, py = player.position.x, player.position.y
         TS = GameSettings.TILE_SIZE
         self.shop_npc_rect = pg.Rect(px + 2 * TS,py - TS,TS,TS)
-
+        
     @override
     def exit(self) -> None:
         if self.online_manager:
@@ -254,16 +269,18 @@ class GameScene(Scene):
                     self.game_manager.current_map.path_name
                 )
         # 玩家碰到 catch_pokemon 草叢 → 進入 CatchPokemonScene
-        if self.game_manager.player:
+        if self.game_manager.player and not getattr(self, "bush_triggered", False):
             player_rect = self.game_manager.player.rect
             for bush in self.bushes:
                 if player_rect.colliderect(bush):
                     Logger.info("Player touched bush → Switching to catch_pokemon scene")
+                    self.bush_triggered = True  # 標記已觸發，避免重複
                     if "catch_pokemon" in scene_manager._scenes:
                         scene_manager.change_scene("catch_pokemon")
                     else:
                         Logger.error("catch_pokemon scene not found!")
                     return
+
 
 
         # ===== Shop NPC Interaction =====
